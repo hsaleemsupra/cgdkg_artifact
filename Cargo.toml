@@ -1,0 +1,25 @@
+[package]
+name = "dkg_comparison"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+groth = {path = "groth"}
+classgroup = {path = "classgroup"}
+criterion = "0.5.1"
+miracl_core_bls12381 = "4.1.2"
+bicycl = {path = "classgroup/supra-bicycl"}
+
+[[bench]]
+name = "benchmarks_cgdkg"
+harness = false
+
+[[bench]]
+name = "benchmarks_grothdkg"
+harness = false
+
+[[bin]]
+name = "main"
+path = "src/main.rs"
