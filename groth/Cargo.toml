@@ -1,0 +1,20 @@
+[package]
+name = "groth"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lazy_static = "1.4.0"
+arrayvec = "0.7.2"
+hex = "0.4.2"
+miracl_core_ed25519 = "0.2.0"
+miracl_core_bls12381 = "4.1.2"
+rayon = "1.5"
+
+rand = "0.8"
+rand_chacha = "0.2.2"
+zeroize = { version = "1.4.3", features = ["zeroize_derive"] }
+
+[dev-dependencies]
+criterion = "0.3.4"
+proptest = "1.0.0"
