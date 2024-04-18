@@ -1,0 +1,68 @@
+{
+  "cpp_build_config": {
+    "items": [
+      {
+        "condition": "True",
+        "data": {
+          "linked_libs": [
+            "gmp"
+          ],
+          "linked_frameworks": [],
+          "compiler_flags": [],
+          "library_type": "Static",
+          "cmake_vars": []
+        }
+      },
+      {
+        "condition": "True",
+        "data": {
+          "linked_libs": [
+            "ssl"
+          ],
+          "linked_frameworks": [],
+          "compiler_flags": [],
+          "library_type": "Static",
+          "cmake_vars": []
+        }
+      },
+      {
+        "condition": "True",
+        "data": {
+          "linked_libs": [
+            "crypto"
+          ],
+          "linked_frameworks": [],
+          "compiler_flags": [],
+          "library_type": "Static",
+          "cmake_vars": []
+        }
+      }
+    ]
+  },
+  "cpp_wrapper_lib_name": "bicycl_c",
+  "known_targets": [
+    {
+      "target": {
+        "arch": "X86_64",
+        "os": "MacOS",
+        "family": "Unix",
+        "env": "None",
+        "pointer_width": "P64",
+        "endian": "Little"
+      },
+      "cpp_library_version": "6.4.2"
+    },
+
+    {
+      "target": {
+        "arch": "X86_64",
+        "os": "Linux",
+        "family": "Unix",
+        "env": "Gnu",
+        "pointer_width": "P64",
+        "endian": "Little"
+      },
+      "cpp_library_version": "6.4.2"
+    }
+  ]
+}
