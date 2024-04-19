@@ -1,5 +1,7 @@
 # Non-interactive VSS using Class Groups and Application to DKG
 
+[![DOI](https://zenodo.org/badge/788686770.svg)](https://zenodo.org/doi/10.5281/zenodo.10999757)
+
 ## Overview
 
 
