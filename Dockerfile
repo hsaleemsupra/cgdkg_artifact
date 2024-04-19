@@ -20,4 +20,4 @@ ENV RUSTFLAGS="-A warnings"
 RUN cargo build --release 
 
 # Default command runs the benchmarks without displaying warnings
-CMD ["cargo", "bench"]
+CMD ["cargo", "bench", "--quiet"]

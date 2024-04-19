@@ -8,19 +8,99 @@ use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
 use miracl_core_bls12381::bls12381::big::BIG;
 use miracl_core_bls12381::bls12381::ecp::ECP;
 use classgroup::cg_encryption::{decrypt, encrypt_all, keygen};
-use classgroup::key_pop_zk::PopZkInstance;
+use classgroup::nidkg_dealing::Dealing;
 use classgroup::nidkg_zk_share::{get_cgdkg_zk_share_g, prove_sharing, SharingInstance, SharingWitness, verify_sharing};
 use classgroup::polynomial::Polynomial;
 use classgroup::public_coefficients::PublicCoefficients;
 use classgroup::rng::RAND_ChaCha20;
-use classgroup::utils::get_cl;
+use classgroup::utils::{get_cl, mpz_to_big};
+use groth::nidkg_zk_share::get_nidkg_zk_share_g;
+use groth::scalar_bls12381::field_add_assign;
+use miracl_core_bls12381::bls12381::pair;
 
 struct DkgConfig {
     total_nodes: usize,
     threshold: usize
 }
 
+fn gen_keys(dkg_config: &DkgConfig, c: &CppBox<CLHSMqk>, rng_cpp: &mut CppBox<RandGen>) -> (Vec<SecretKeyBox>, Vec<PublicKeyBox>){
+
+    // Used to store encryption key pairs of each node i
+    let mut sks = Vec::new();
+    let mut pks = Vec::new();
+    let associated_data = Vec::new();
+
+    for _i in 0..dkg_config.total_nodes {
+        let(sk,pk, _pop) = keygen(c, rng_cpp, &associated_data);
+        sks.push(sk);
+        pks.push(pk.clone());
+    }
+
+    return (sks, pks);
+}
+
+fn initialize(dkg_config: &DkgConfig, rng: &mut RAND_ChaCha20) -> (Vec<BIG>, PublicCoefficients) {
+    //each node generates a random polynomial with threshold coefficients
+    //i.e. >=threshold shares required for reconstruction
+    let poly = Polynomial::random(dkg_config.threshold, rng);
+    let pubpoly = PublicCoefficients::from_poly_g(&poly, &get_cgdkg_zk_share_g(&"cgdkg".to_string()));
+
+    //a node generates n evaluations using his secret polynomial one for each of the n total nodes
+    let mut evaluations: Vec<BIG> = Vec::new();
+    for j in 0..dkg_config.total_nodes {
+        evaluations.push(poly.evaluate_at(&BIG::new_int((j + 1) as isize)));
+    }
+
+    return (evaluations, pubpoly);
+}
+
+fn gen_dealing(config: &DkgConfig, cl: &CppBox<CLHSMqk>, rng: &mut RAND_ChaCha20, rng_cpp: &mut CppBox<RandGen>, pks: &Vec<PublicKeyBox>) -> (Dealing, SharingInstance){
+
+    let (evals, pubpoly) = initialize(&config, rng);
+    let (ciphers, r) = encrypt_all(&cl, rng_cpp, &pks, evals.clone());
+
+    let mut g_r = unsafe{QFI::new_0a()};
+    let ref_r: cpp_core::Ref<Mpz> = unsafe{cpp_core::Ref::from_raw_ref(&r.0)};
+    let mutref_g_r: cpp_core::MutRef<QFI> = unsafe{cpp_core::MutRef::from_raw_ref(&mut g_r)};
+    unsafe{ cl.power_of_h(mutref_g_r, ref_r)};
+
+    let instance = SharingInstance {
+        g1_gen: ECP::generator(),
+        g: get_cgdkg_zk_share_g(&"cgdkg".to_string()),
+        public_keys: pks.clone(),
+        public_coefficients: pubpoly.coefficients.clone(),
+        randomizer: QFIBox(g_r),
+        ciphertexts: ciphers.clone(),
+    };
+
+    let witness = SharingWitness {
+        scalar_r: r,
+        scalars_m: evals.clone(),
+    };
+
+    let proof = {prove_sharing(
+        &instance,
+        &witness,
+        &cl,
+        rng,
+        rng_cpp
+    )};
+
+    let dealing = Dealing{
+        public_coefficients: pubpoly.clone(),
+        ciphertexts: ciphers.clone(),
+        zk_proof_correct_sharing: proof,
+    };
+
+    return (dealing, instance);
+}
+
 fn benchmark_cg_dkg(c: &mut Criterion) {
+
+    // Create a benchmark group
+    let mut group = c.benchmark_group("Class group");
+    // Set the sample size for benchmarking group
+    group.sample_size(10);
 
     let configs = vec![
         DkgConfig { total_nodes: 50, threshold: 25 },
@@ -38,126 +118,90 @@ fn benchmark_cg_dkg(c: &mut Criterion) {
     let mut rng_cpp = unsafe { RandGen::new_1a(ref_seed_mpz) };
     let cl = get_cl();
 
-    for config in configs {
+    for config in &configs {
 
-        let (sks, pks, evals, aa) = initialize(&config, &cl, rng, &mut rng_cpp);
+        //generate sks and pks for each node in a central trusted party setup
+        let (sks, pks) = gen_keys(&config, &cl, &mut rng_cpp);
 
-        c.bench_with_input(BenchmarkId::new("Classgroup DKG: Dealer Time (encrypt_shares + prove_sharing)", format!("nodes: {}, threshold: {}", config.total_nodes, config.threshold)), &config, |b, _cfg| {
+        // Dealer time benchmarks
+        group.bench_with_input(BenchmarkId::new("VSS: Dealer Time (encrypt_shares + prove_sharing)", format!("n: {}, t: {}", config.total_nodes, config.threshold)), &config, |b, _cfg| {
             b.iter(|| {
-                let (ciphers, r) = encrypt_all(&cl, &mut rng_cpp, &pks, evals.clone());
-                let mut g_r = unsafe{QFI::new_0a()};
-                let ref_r: cpp_core::Ref<Mpz> = unsafe{cpp_core::Ref::from_raw_ref(&r.0)};
-                let mutref_g_r: cpp_core::MutRef<QFI> = unsafe{cpp_core::MutRef::from_raw_ref(&mut g_r)};
-                unsafe{ cl.power_of_h(mutref_g_r, ref_r)};
-
-                let instance = SharingInstance {
-                    g1_gen: ECP::generator(),
-                    g: get_cgdkg_zk_share_g(&"cgdkg".to_string()),
-                    public_keys: pks.clone(),
-                    public_coefficients: aa.clone(),
-                    randomizer: QFIBox(g_r),
-                    ciphertexts: ciphers.clone(),
-                };
-
-                let witness = SharingWitness {
-                    scalar_r: r,
-                    scalars_m: evals.clone(),
-                };
-
-                let _proof = {prove_sharing(
-                    &instance,
-                    &witness,
-                    &cl,
-                    rng,
-                    &mut rng_cpp
-                )};
-
+                let (_dealing, _instance) = gen_dealing(&config, &cl, rng, &mut rng_cpp, &pks);
             });
         });
 
-        let (ciphers, r) = encrypt_all(&cl, &mut rng_cpp, &pks, evals.clone());
+        let (dealing, instance) = gen_dealing(&config, &cl, rng, &mut rng_cpp, &pks);
 
-        let mut g_r = unsafe{QFI::new_0a()};
-        let ref_r: cpp_core::Ref<Mpz> = unsafe{cpp_core::Ref::from_raw_ref(&r.0)};
-        let mutref_g_r: cpp_core::MutRef<QFI> = unsafe{cpp_core::MutRef::from_raw_ref(&mut g_r)};
-        unsafe{ cl.power_of_h(mutref_g_r, ref_r)};
-
-        let instance = SharingInstance {
-            g1_gen: ECP::generator(),
-            g: get_cgdkg_zk_share_g(&"cgdkg".to_string()),
-            public_keys: pks,
-            public_coefficients: aa,
-            randomizer: QFIBox(g_r),
-            ciphertexts: ciphers.clone(),
-        };
-
-        let witness = SharingWitness {
-            scalar_r: r,
-            scalars_m: evals.clone(),
-        };
-
-        let proof = {prove_sharing(
-            &instance,
-            &witness,
-            &cl,
-            rng,
-            &mut rng_cpp
-        )};
-
-        c.bench_with_input(BenchmarkId::new("Classgroup DKG: Receiver Time (verify_sharing + decrypt_share)", format!("nodes: {} threshold: {}", config.total_nodes, config.threshold)), &config, |b, _cfg| {
+        // Receiver time benchmarks
+        group.bench_with_input(BenchmarkId::new("VSS: Receiver Time (verify_sharing + decrypt_share)", format!("n: {} t: {}", config.total_nodes, config.threshold)), &config, |b, _cfg| {
             b.iter(|| {
                 verify_sharing(&instance,
-                               &proof,
+                               &dealing.zk_proof_correct_sharing,
                                &cl).expect("Verification failed");
-
-                let _pt = decrypt(&cl, &sks[0], &ciphers[0]);
+                let _pt = decrypt(&cl, &sks[0], &dealing.ciphertexts[0]);
             });
         });
 
     }
-}
 
-// Initialize or prepare instances for benchmarking
-fn initialize(dkg_config: &DkgConfig, c: &CppBox<CLHSMqk>, rng: &mut RAND_ChaCha20, rng_cpp: &mut CppBox<RandGen>) -> (Vec<SecretKeyBox>, Vec<PublicKeyBox>, Vec<BIG>, Vec<ECP>) {
+    let configs = vec![
+        DkgConfig { total_nodes: 10, threshold: 5 },
+        DkgConfig { total_nodes: 20, threshold: 10 },
+        DkgConfig { total_nodes: 30, threshold: 15 },
+        DkgConfig { total_nodes: 40, threshold: 20 },
+        DkgConfig { total_nodes: 50, threshold: 25 },
+    ];
 
-    // Used to store encryption key pairs of each node i
-    let mut sks = Vec::new();
-    let mut pks = Vec::new();
-    let associated_data = Vec::new();
+    // Benchmarking DKG computation cost per node for node n-1
+    // Note here we don't compute the cost for running the DKG in a threshold setting as it requires
+    // setting up a committee of nodes for DKG and a SMR committee.
+    // We only benchmark the computation cost of a node in the DKG committee
+    for config in &configs{
+        let mut dealings = Vec::new();
+        let mut sharing_instances = Vec::new();
+        //generate sks and pks for each node in a central trusted party setup
+        let (sks, pks) = gen_keys(&config, &cl, &mut rng_cpp);
 
-    for _i in 0..dkg_config.total_nodes {
-        let(sk,pk, _pop) = keygen(c, rng_cpp, &associated_data);
+        for _i in 0.. config.threshold - 1{
+            let (dealing, instance) = gen_dealing(&config, &cl, rng, &mut rng_cpp, &pks);
+            dealings.push(dealing);
+            sharing_instances.push(instance);
+        }
 
-        let ffi_gen_h = unsafe{bicycl::__ffi::ctr_bicycl_ffi_BICYCL_QFI_QFI2(
-            cpp_core::CastInto::<cpp_core::Ref<QFI>>::cast_into(c.h())
-                .as_raw_ptr(),
-        )};
+        group.bench_with_input(BenchmarkId::new("DKG: Compute per node (dealer_cost + t * verifier_cost + gen_bls_key)", format!("n: {} t: {}", config.total_nodes, config.threshold)), &config, |b, _cfg| {
+            b.iter(|| {
 
-        let gen_h = unsafe{cpp_core::CppBox::from_raw(ffi_gen_h)}.expect("attempted to construct a null CppBox");
+                // Dealing gen for node n-1
+                let (dealing, instance) = gen_dealing(&config, &cl, rng, &mut rng_cpp, &pks);
+                dealings.push(dealing);
+                sharing_instances.push(instance);
 
-        let _instance = PopZkInstance {
-            gen: QFIBox(gen_h),
-            public_key: pk.clone(),
-            associated_data: associated_data.clone(),
-        };
+                let mut accumulated_public_polynomial = PublicCoefficients::from_poly_g(&Polynomial::zero(), &get_nidkg_zk_share_g(&"cgdkg".to_string()));
+                let mut acc_sk_share = BIG::new();
 
-        sks.push(sk);
-        pks.push(pk.clone());
-    }
+                for i in 0..config.threshold {
+                    let dealing = dealings[i].clone();
 
-    //each node generates a random polynomial with threshold coefficients
-    //i.e. >=threshold shares required for reconstruction
-    let poly = Polynomial::random(dkg_config.threshold, rng);
-    let pubpoly = PublicCoefficients::from_poly_g(&poly, &get_cgdkg_zk_share_g(&"cgdkg".to_string()));
-    let aa = pubpoly.coefficients;
+                    if verify_sharing(&sharing_instances[i], &dealing.zk_proof_correct_sharing, &cl) == Ok(()) {
+                        if accumulated_public_polynomial.coefficients.len() == 0 {
+                            accumulated_public_polynomial = dealing.public_coefficients.clone();
+                        } else {
+                            accumulated_public_polynomial += dealing.public_coefficients.clone();
+                        }
 
-    //a node generates n evaluations using his secret polynomial one for each of the n total nodes
-    let mut evaluations: Vec<BIG> = Vec::new();
-    for j in 0..dkg_config.total_nodes {
-        evaluations.push(poly.evaluate_at(&BIG::new_int((j + 1) as isize)));
-    }
+                        let mut sk_share = decrypt(&cl, &sks[config.total_nodes - 1], &dealing.ciphertexts[config.total_nodes - 1]);
+                        let sk_share_big = unsafe { mpz_to_big(&mut *sk_share.0) };
+                        field_add_assign(&mut acc_sk_share, &sk_share_big);
+                    }
+                }
 
-    return (sks, pks, evaluations, aa);
+                let _node_pk_share = pair::g1mul(&ECP::generator(), &acc_sk_share);
+            });
+        });
+
+        }
+    group.finish();
+
 }
 
 
