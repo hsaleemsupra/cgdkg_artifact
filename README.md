@@ -4,7 +4,6 @@
 
 ## Overview
 
-
 This repository contains the implementation code for the paper "Non-interactive VSS using Class Groups and Application to DKG."
 
 ## Running Benchmarks
@@ -26,7 +25,7 @@ The simplest way to run the benchmarks to compare Class Group-based DKG with Gro
      docker run --rm cgdkg_app
     ```
 
-4. Running the docker container should run benchmarks comparing the **dealer time** and **receiver time** for our class group-based dkg with Groth's dkg for **n = [50, 100, 150, 200]**, t=n/2.
+4. Running the docker container should run benchmarks comparing the **dealer time** and **receiver time** for our class group-based VSS with Groth's VSS for **n = [50, 100, 150, 200]**, t=n/2. We also include benchmarking DKG compute cost per node that includes costs for generating a dealing, verifying t dealings received, and decrypting t shares to compute accumulated secret key share and public key share. The DKG benchmarks are computed for **n = [10, 20, 30, 40, 50]**, t=n/2. Note these benchmarks are run locally and not in a distributed setting which requires network setup. 
 
 **NOTE**
 
