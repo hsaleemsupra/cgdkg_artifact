@@ -15,6 +15,7 @@ miracl_core_bls12381 = "4.1.2"
 rand = "0.8"
 rand_chacha = "0.2.2"
 zeroize = { version = "1.4.3", features = ["zeroize_derive"] }
+anyhow = "1.0.82"
 
 [dev-dependencies]
 criterion = "0.3.4"

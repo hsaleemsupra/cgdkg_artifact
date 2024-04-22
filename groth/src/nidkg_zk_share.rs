@@ -244,8 +244,6 @@ pub fn verify_sharing(
 
     lhs = ECP::muln(instance.public_coefficients.len(), instance.public_coefficients.as_slice(), accs.as_slice());
 
-
-
     lhs = pair::g1mul(&lhs, &x_challenge);
     lhs.add(&nizk.aa);
     let rhs = pair::g1mul(&instance.g, &nizk.z_alpha);

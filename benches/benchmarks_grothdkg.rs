@@ -1,5 +1,6 @@
 extern crate groth;
 
+use groth::nidkg_dealing::aggregate_dealings;
 use groth::nidkg_dealing::Dealing;
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
 use groth::chunked_elgamal::{elgamal_decrypt_one, elgamal_encrypt_all, ElGamalCiphertext, fr_to_chunks, keygen, NUM_CHUNKS};
@@ -10,7 +11,6 @@ use groth::nidkg_zk_share::{get_nidkg_zk_share_g, prove_sharing, SharingInstance
 use groth::polynomial::Polynomial;
 use groth::public_coefficients::PublicCoefficients;
 use groth::rng::RAND_ChaCha20;
-use groth::scalar_bls12381::field_add_assign;
 use miracl_core_bls12381::bls12381::pair;
 
 fn gen_keys(dkg_config: &DkgConfig, rng: &mut RAND_ChaCha20) -> (Vec<BIG>, Vec<ECP>){
@@ -196,6 +196,7 @@ fn benchmark_groth(c: &mut Criterion) {
         //generate sks and pks for each node in a central trusted party setup
         let (sks, pks) = gen_keys(&config, rng);
 
+        //generating dealings for other nodes except self
         for _i in 0.. config.threshold - 1{
             let (dealing, sharing_instance, chunking_instance) = gen_dealing(&config, rng, &pks);
             dealings.push(dealing);
@@ -203,36 +204,31 @@ fn benchmark_groth(c: &mut Criterion) {
             chunking_instances.push(chunking_instance);
         }
 
-        group.bench_with_input(BenchmarkId::new("DKG: Compute per node (dealer_cost + t * verifier_cost + gen_bls_key)", format!("n: {} t: {}", config.total_nodes, config.threshold)), &config, |b, _cfg| {
+        group.bench_with_input(BenchmarkId::new("DKG: Compute per node (dealer_cost + t * verifier_cost + agg_dealings)", format!("n: {} t: {}", config.total_nodes, config.threshold)), &config, |b, _cfg| {
             b.iter(|| {
-                // Dealing gen for node n-1
+                // Dealing gen for node t
                 let (dealing, sharing_instance, chunking_instance) = gen_dealing(&config, rng, &pks);
                 dealings.push(dealing);
                 sharing_instances.push(sharing_instance);
                 chunking_instances.push(chunking_instance);
 
-                let mut accumulated_public_polynomial = PublicCoefficients::from_poly_g(&Polynomial::zero(), &get_nidkg_zk_share_g(&"nidkg".to_string()));
-                let mut acc_sk_share = BIG::new();
-
-                for i in 0..config.threshold {
-                    let dealing = dealings[i].clone();
-
-                    if verify_sharing(&sharing_instances[i], &dealing.zk_proof_correct_sharing) == Ok(()) &&
-                        verify_chunking(&chunking_instances[i], &dealing.zk_proof_decryptability) == Ok(()) {
-                        if accumulated_public_polynomial.coefficients.len() == 0 {
-                            accumulated_public_polynomial = dealing.public_coefficients.clone();
-                        } else {
-                            accumulated_public_polynomial += dealing.public_coefficients.clone();
-                        }
-
-                        let sk_share = elgamal_decrypt_one(&dealing.ciphertexts.cc[config.total_nodes - 1],
-                                                           &sks[config.total_nodes - 1],
-                                                           &dealing.ciphertexts.rr).unwrap();
-                        field_add_assign(&mut acc_sk_share, &sk_share);
+                // Verify t-1 dealings
+                let mut verified_dealings = Vec::new();
+                for i in 0..dealings.len()-1{
+                    if verify_sharing(&sharing_instances[i], &dealings[i].zk_proof_correct_sharing) == Ok(()) &&
+                        verify_chunking(&chunking_instances[i], &dealings[i].zk_proof_decryptability) == Ok(()){
+                        verified_dealings.push(dealings[i].clone());
                     }
                 }
 
-                let _node_pk_share = pair::g1mul(&ECP::generator(), &acc_sk_share);
+                // node's own dealing need not to be verified
+                verified_dealings.push(dealings[dealings.len()-1].clone());
+                assert!(verified_dealings.len()>=config.threshold);
+
+                let (_sk, _committee_pk, _pk_shares, _public_poly) = aggregate_dealings(&verified_dealings,
+                                                                                        &sks[config.threshold - 1],
+                                                                                        config.threshold-1,
+                                                                                        config.total_nodes).unwrap();
             });
         });
 
