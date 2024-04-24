@@ -11,6 +11,7 @@ use crate::nidkg_zk_share::get_cgdkg_zk_share_g;
 use std::ops::DerefMut;
 use miracl_core_bls12381::bls12381::ecp::ECP;
 use anyhow::bail;
+use bicycl::b_i_c_y_c_l::CLHSMqk;
 use crate::scalar_bls12381::field_mul;
 
 const CG_DKG_STR: &str = "cgdkg";
@@ -62,7 +63,8 @@ pub fn pubcoeff_to_pks(public_coefficients: &PublicCoefficients, total_nodes: us
 
 // aggregates verified dealings to form node's partial secret key, committe public key,
 // partial public keys for all nodes and public coefficient.
-pub fn aggregate_dealings(dealings: &Vec<Dealing>,
+pub fn aggregate_dealings(c: &CppBox<CLHSMqk>,
+                          dealings: &Vec<Dealing>,
                           cg_private_key: &SecretKeyBox,
                           node_index: usize,
                           total_nodes: usize)
@@ -82,8 +84,6 @@ pub fn aggregate_dealings(dealings: &Vec<Dealing>,
             accumulated_public_polynomial += dealing.public_coefficients.clone();
         }
     }
-
-    let c = get_cl();
 
     let my_shares: Result<Vec<BIG>, ()> = dealings
         .iter()
@@ -112,7 +112,6 @@ pub fn aggregate_dealings(dealings: &Vec<Dealing>,
         }
     }
 
-    let partial_pks = pubcoeff_to_pks(&accumulated_public_polynomial, total_nodes);
 
     return Ok((accumulated_sk, accumulated_public_polynomial.coefficients[0].clone(), partial_pks, accumulated_public_polynomial));
 

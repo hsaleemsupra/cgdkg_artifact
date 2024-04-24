@@ -185,7 +185,7 @@ fn benchmark_cg_dkg(c: &mut Criterion) {
                 // node's own dealing need not to be verified
                 verified_dealings.push(dealings[dealings.len()-1].clone());
                 assert!(verified_dealings.len()>=config.threshold);
-                let (_sk, _committee_pk, _pk_shares, _public_poly) = aggregate_dealings(&verified_dealings,
+                let (_sk, _committee_pk, _pk_shares, _public_poly) = aggregate_dealings(&cl, &verified_dealings,
                                    &sks[config.threshold - 1],
                                    config.threshold-1,
                                    config.total_nodes).unwrap();
