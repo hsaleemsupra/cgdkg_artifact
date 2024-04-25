@@ -3,7 +3,7 @@ use crate::nidkg_zk_share::ZkProofSharing;
 use crate::public_coefficients::PublicCoefficients;
 use bicycl::{CiphertextBox, SecretKeyBox};
 use crate::scalar_bls12381::field_add_assign;
-use crate::utils::{get_cl, mpz_to_big};
+use crate::utils::mpz_to_big;
 use crate::cg_encryption::decrypt;
 use miracl_core_bls12381::bls12381::big::BIG;
 use crate::polynomial::Polynomial;
@@ -13,6 +13,7 @@ use miracl_core_bls12381::bls12381::ecp::ECP;
 use anyhow::bail;
 use bicycl::b_i_c_y_c_l::CLHSMqk;
 use crate::scalar_bls12381::field_mul;
+use cpp_core::CppBox;
 
 const CG_DKG_STR: &str = "cgdkg";
 
@@ -112,6 +113,7 @@ pub fn aggregate_dealings(c: &CppBox<CLHSMqk>,
         }
     }
 
+    let partial_pks = pubcoeff_to_pks(&accumulated_public_polynomial, total_nodes);
 
     return Ok((accumulated_sk, accumulated_public_polynomial.coefficients[0].clone(), partial_pks, accumulated_public_polynomial));
 
