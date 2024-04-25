@@ -38,14 +38,8 @@ Alternately, running the benchmarks directly on the host machine requires manual
 2. Install dependencies as follows:
 
     ```
-    apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    pkg-config \
-    libclang-dev \
-    openssl \
-    libgmp-dev \
-    && rm -rf /var/lib/apt/lists/* 
+    sudo apt-get update
+    sudo apt-get install build-essential cmake pkg-config libclang-dev openssl libgmp-dev
     ```
 
 3. Clone the repo and run:
