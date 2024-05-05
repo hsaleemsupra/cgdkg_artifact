@@ -14,6 +14,7 @@ use classgroup::polynomial::Polynomial;
 use classgroup::public_coefficients::PublicCoefficients;
 use classgroup::rng::RAND_ChaCha20;
 use classgroup::utils::get_cl;
+use miracl_core_bls12381::bls12381::big;
 
 struct DkgConfig {
     total_nodes: usize,
@@ -49,6 +50,30 @@ fn initialize(dkg_config: &DkgConfig, rng: &mut RAND_ChaCha20) -> (Vec<BIG>, Pub
     }
 
     return (evaluations, pubpoly);
+}
+
+//Computes dealing size in Kbits
+unsafe fn compute_dealing_size(dealing: &Dealing) -> f32{
+    let mut dealing_size = 0;
+
+    //bits to represent polynomial commitment
+    dealing_size += dealing.public_coefficients.coefficients.len() * (big::MODBYTES+1) * 8;
+
+    //bits to represent encrypted polynomial evaluations
+    dealing_size += dealing.ciphertexts[0].0.c1().compressed_repr().nbits(); // c1 = r
+    for cipher in &dealing.ciphertexts{
+        dealing_size += cipher.0.c2().compressed_repr().nbits(); //c2
+    }
+
+    //bits to represent nizk proof of sharing
+    dealing_size += (big::MODBYTES+1) * 8;
+    dealing_size += dealing.zk_proof_correct_sharing.ff.0.compressed_repr().nbits();
+    dealing_size += dealing.zk_proof_correct_sharing.yy.0.compressed_repr().nbits();
+    dealing_size += dealing.zk_proof_correct_sharing.z_r.0.nbits();
+    dealing_size += dealing.zk_proof_correct_sharing.z_alpha.nbits();
+
+    //converting to Kbits
+    return dealing_size as f32/1024.0;
 }
 
 fn gen_dealing(config: &DkgConfig, cl: &CppBox<CLHSMqk>, rng: &mut RAND_ChaCha20, rng_cpp: &mut CppBox<RandGen>, pks: &Vec<PublicKeyBox>) -> (Dealing, SharingInstance){
@@ -138,7 +163,9 @@ fn benchmark_cg_dkg(c: &mut Criterion) {
                 let _pt = decrypt(&cl, &sks[0], &dealing.ciphertexts[0]);
             });
         });
-
+        
+        let dealing_size = unsafe{compute_dealing_size(&dealing)};
+        println!("Classgroup VSS Dealing Size: {:?} Kbits. (n: {:?}, t: {:?})", dealing_size, config.total_nodes, config.threshold);
     }
 
     let configs = vec![

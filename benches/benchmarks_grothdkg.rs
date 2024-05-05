@@ -11,7 +11,7 @@ use groth::nidkg_zk_share::{get_nidkg_zk_share_g, prove_sharing, SharingInstance
 use groth::polynomial::Polynomial;
 use groth::public_coefficients::PublicCoefficients;
 use groth::rng::RAND_ChaCha20;
-use miracl_core_bls12381::bls12381::pair;
+use miracl_core_bls12381::bls12381::{big, pair};
 
 fn gen_keys(dkg_config: &DkgConfig, rng: &mut RAND_ChaCha20) -> (Vec<BIG>, Vec<ECP>){
     // Used to store encryption key pairs of each node i
@@ -136,6 +136,48 @@ struct DkgConfig {
     threshold: usize
 }
 
+//Computes dealing size in Kbits
+unsafe fn compute_dealing_size(dealing: &Dealing) -> f32{
+    let mut dealing_size = 0;
+
+    //bits to represent polynomial commitment
+    dealing_size += dealing.public_coefficients.coefficients.len() * (big::MODBYTES+1) * 8;
+
+    //bits to represent encrypted polynomial evaluations
+    dealing_size += (big::MODBYTES+1) * 8 * NUM_CHUNKS; //rr
+    dealing_size += (big::MODBYTES+1) * 8; //rr_combined
+    dealing_size += dealing.ciphertexts.cc.len() * (big::MODBYTES+1) * 8 * NUM_CHUNKS; //cc
+    dealing_size += dealing.ciphertexts.cc_combined.len() * (big::MODBYTES+1) * 8; //cc_combined
+
+    //bits to represent nizk proof of sharing
+    dealing_size += (big::MODBYTES+1) * 8; //aa
+    dealing_size += (big::MODBYTES+1) * 8; //ff
+    dealing_size += (big::MODBYTES+1) * 8; //yy
+    dealing_size += dealing.zk_proof_correct_sharing.z_r.nbits(); //z_r
+    dealing_size += dealing.zk_proof_correct_sharing.z_alpha.nbits(); //z_alpha
+
+    //bits to represent nizk proof of correct chunking
+    dealing_size += (big::MODBYTES+1) * 8; //yy
+    dealing_size += (big::MODBYTES+1) * 8; //y0
+    dealing_size += dealing.zk_proof_decryptability.cc.len() * (big::MODBYTES+1) * 8; //cc
+    dealing_size += dealing.zk_proof_decryptability.dd.len() * (big::MODBYTES+1) * 8; //dd
+    dealing_size += dealing.zk_proof_decryptability.bb.len() * (big::MODBYTES+1) * 8; //bb
+    dealing_size += dealing.zk_proof_decryptability.z_beta.nbits(); //z_beta
+
+    //z_r
+    for b in &dealing.zk_proof_decryptability.z_r{
+        dealing_size += b.nbits();
+    }
+
+    //z_s
+    for b in &dealing.zk_proof_decryptability.z_s{
+        dealing_size += b.nbits();
+    }
+
+    //converting to Kbits
+    return dealing_size as f32/1024.0;
+}
+
 fn benchmark_groth(c: &mut Criterion) {
 
     // Create a benchmark group
@@ -175,6 +217,9 @@ fn benchmark_groth(c: &mut Criterion) {
                                              &dealing.ciphertexts.rr);
             });
         });
+
+        let dealing_size = unsafe{compute_dealing_size(&dealing)};
+        println!("Groth's VSS Dealing Size: {:?} Kbits. (n: {:?}, t: {:?})", dealing_size, config.total_nodes, config.threshold);
     }
 
     let configs = vec![
