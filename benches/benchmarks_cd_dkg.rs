@@ -7,7 +7,7 @@ use bicycl::cpp_std::VectorOfUchar;
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
 use miracl_core_bls12381::bls12381::big::BIG;
 use miracl_core_bls12381::bls12381::ecp::ECP;
-use miracl_core_bls12381::bls12381::pair;
+use miracl_core_bls12381::bls12381::{big, pair};
 use cd::cg_encryption::{decrypt, encrypt_all, keygen};
 use cd::config::DkgConfig;
 use cd::nidkg_dealing::{aggregate_dealings, DealingDkg, DealingVss};
@@ -59,6 +59,26 @@ fn initialize_vss(dkg_config: &DkgConfig, rng: &mut RAND_ChaCha20) -> Vec<BIG> {
     }
 
     return evaluations;
+}
+
+//Computes dealing size in Kbits
+unsafe fn compute_dealing_size(dealing: &DealingVss) -> f32{
+    let mut dealing_size = 0;
+
+    //bits to represent encrypted polynomial evaluations
+    dealing_size += dealing.ciphertexts[0].0.c1().compressed_repr().nbits(); // c1 = r
+    for cipher in &dealing.ciphertexts{
+        dealing_size += cipher.0.c2().compressed_repr().nbits(); //c2
+    }
+
+    //bits to represent nizk proof of sharing
+    dealing_size += (big::MODBYTES+1) * 8;
+    dealing_size += dealing.zk_proof_correct_sharing.nizk_dleq.c.nbits();
+    dealing_size += dealing.zk_proof_correct_sharing.nizk_dleq.u_r1.0.nbits();
+    dealing_size += dealing.zk_proof_correct_sharing.nizk_dleq.u_r2.0.nbits();
+
+    //converting to Kbits
+    return dealing_size as f32/1024.0;
 }
 
 fn gen_dealing_dkg(config: &DkgConfig, cl: &CppBox<CLHSMqk>, rng: &mut RAND_ChaCha20, rng_cpp: &mut CppBox<RandGen>, pks: &Vec<PublicKeyBox>) -> (DealingDkg, SharingInstanceDKG){
@@ -187,6 +207,10 @@ fn benchmark_config(c: &mut Criterion) {
                 let _pt = decrypt(&cl, &sks[0], &dealing.ciphertexts[0]);
             });
         });
+
+        let dealing_size = unsafe{compute_dealing_size(&dealing)};
+        println!("CD23 VSS Dealing Size: {:?} Kbits. (n: {:?}, t: {:?})", dealing_size, config.total_nodes, config.threshold);
+
     }
 
     let configs = vec![
