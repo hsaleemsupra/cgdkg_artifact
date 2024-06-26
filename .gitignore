@@ -1,0 +1,45 @@
+# Ignore the target directory
+/target/
+
+# Ignore compiled dynamic libraries
+*.dylib
+*.so
+*.dll
+
+# Ignore Cargo.lock (if you are building an executable, check it into git, if it's a library, you might want to ignore it)
+# See https://doc.rust-lang.org/cargo/faq.html#why-do-binaries-have-cargolock-in-version-control-but-not-libraries
+# Cargo.lock
+
+# Ignore build artifacts
+**/*.rs.bk
+
+# Ignore IDE files
+.idea/
+.vscode/
+
+# Ignore specific editors
+*~ 
+*.swp
+*.swo
+
+# Node.js dependencies (if you are using Node for any front-end work in your project)
+node_modules/
+
+# Ignore the output of rustfmt
+**/*.rs.bk
+
+# CMake build files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Ignore output from cargo install
+.cargo/
+
+# Rust Analyzer files
+*.rustc
+
+# Ignore documentation files
+/doc/
+

@@ -8,9 +8,10 @@ edition = "2021"
 [dependencies]
 groth = {path = "groth"}
 classgroup = {path = "classgroup"}
+cd = {path = "cd"}
 criterion = "0.5.1"
 miracl_core_bls12381 = "4.1.2"
-bicycl = {path = "classgroup/supra-bicycl"}
+bicycl = {path = "supra-bicycl" }
 
 [[bench]]
 name = "benchmarks_cgdkg"
@@ -18,6 +19,10 @@ harness = false
 
 [[bench]]
 name = "benchmarks_grothdkg"
+harness = false
+
+[[bench]]
+name = "benchmarks_cd_dkg"
 harness = false
 
 [[bin]]
